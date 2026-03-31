@@ -1298,6 +1298,14 @@ textarea::-webkit-scrollbar-thumb {
   /* Force open button visible on mobile if needed, or keep hidden */
   .show-sidebar { display: flex !important; margin-left: -4px; }
   
+  /* Sidebar stays as a column on mobile too. */
+  .sidebar { width: 240px; min-width: 240px; }
+  
+  /* Disable intense idle animation on mobile to save battery/performance */
+  .layout.is-idle #warpCanvas, .layout.is-idle .nebula {
+    display: none !important;
+  }
+  
   .suggestion-grid { grid-template-columns: 1fr; max-width: 340px; }
   .msg-row { padding: 8px 14px; }
   .bubble { max-width: 86%; font-size: 14px; }

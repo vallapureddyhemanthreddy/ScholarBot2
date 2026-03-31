@@ -26,7 +26,9 @@ window.addEventListener('DOMContentLoaded', () => {
   }, 2800);
   
   // Show welcome screen by default, but render history in sidebar
-  renderRecentSearches();
+  // Init Hyper-Space Idle Animation
+  initWarpDrive();
+  resetIdleTimer();
 });
 
 function onInputChange() {
@@ -471,3 +473,85 @@ window.loadThread = async function(id) {
   renderRecentSearches();
   closeSidebar();
 };
+
+// ─── Hyper-Space Idle Animation ─────────────────────────────
+let stars = [];
+const starCount = 400;
+let idleTimer;
+let warpSpeed = 1;
+let targetWarp = 1;
+
+class Star {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.x = (Math.random() - 0.5) * canvas.width * 2;
+    this.y = (Math.random() - 0.5) * canvas.height * 2;
+    this.z = Math.random() * canvas.width;
+    this.pz = this.z;
+  }
+  update() {
+    this.z -= warpSpeed;
+    if (this.z <= 1) {
+      this.z = this.canvas.width;
+      this.x = (Math.random() - 0.5) * this.canvas.width * 2;
+      this.y = (Math.random() - 0.5) * this.canvas.height * 2;
+      this.pz = this.z;
+    }
+  }
+  draw(ctx) {
+    let sx = (this.x / this.z) * this.canvas.width + this.canvas.width/2;
+    let sy = (this.y / this.z) * this.canvas.height + this.canvas.height/2;
+    let px = (this.x / this.pz) * this.canvas.width + this.canvas.width/2;
+    let py = (this.y / this.pz) * this.canvas.height + this.canvas.height/2;
+
+    ctx.strokeStyle = `rgba(16, 185, 129, ${1 - this.z / this.canvas.width})`;
+    ctx.lineWidth = 1 + (1 - this.z / this.canvas.width) * 3;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+    this.pz = this.z;
+  }
+}
+
+function initWarpDrive() {
+  const canvas = document.getElementById('warpCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  
+  const resize = () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = [];
+    for(let i=0; i<starCount; i++) stars.push(new Star(canvas));
+  };
+  
+  const animate = () => {
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.4)'; // Match dark theme bg
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    warpSpeed += (targetWarp - warpSpeed) * 0.05;
+    stars.forEach(s => { s.update(); s.draw(ctx); });
+    requestAnimationFrame(animate);
+  };
+
+  window.addEventListener('resize', resize);
+  resize();
+  animate();
+}
+
+function resetIdleTimer() {
+  clearTimeout(idleTimer);
+  targetWarp = 1;
+  document.querySelector('.layout').classList.remove('is-idle');
+  // Trigger hyper-space after 1 minute of silence
+  idleTimer = setTimeout(() => {
+    targetWarp = 25;
+    document.querySelector('.layout').classList.add('is-idle');
+  }, 60000);
+}
+
+// Activity listeners
+window.addEventListener('mousemove', resetIdleTimer);
+window.addEventListener('keydown', resetIdleTimer);
+window.addEventListener('mousedown', resetIdleTimer);
+window.addEventListener('touchstart', resetIdleTimer);
