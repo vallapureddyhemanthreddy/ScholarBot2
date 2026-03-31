@@ -21,6 +21,11 @@ INTENT_PATTERNS = {
         r"\b(naya|dobara|phir se)\b.*\b(shuru|start)\b",
         r"\b(start|shuru)\b.*\b(again|over|naye|fresh)\b",
     ],
+    "list_scholarships": [
+        r"\b(list|show)\b\s+(all\s+)?(scholar|schlor|schlar|sholar|scolar|skolar|scholr|schemes?|yojanas?)",
+        r"\bwhat\s+(scholar|schlor|schlar|sholar|scolar|skolar|scholr|schemes?|yojanas?)\b.*(available|have|there)",
+        r"\ball\s+(scholar|schlor|schlar|sholar|scolar|skolar|scholr|schemes?|yojanas?)",
+    ],
     "show_results": [
         r"\b(show|find|get|give|tell|search).{0,25}\b(scholarship|result|match|eligible)\b",
         r"\bmy\s+scholarships?\b",

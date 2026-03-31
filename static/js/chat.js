@@ -7,6 +7,7 @@ const STEP_LABELS = ['GPA','Income','Category','Gender','State','Course','Year']
 
 let busy = false;
 let collectedFields = [];
+let currentThreadId = Date.now().toString();
 
 // ─── Init ────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
@@ -14,6 +15,18 @@ window.addEventListener('DOMContentLoaded', () => {
   applyTheme(saved, false);
   document.getElementById('input').addEventListener('input', onInputChange);
   document.getElementById('input').focus();
+  
+  // Hide splash screen after premium animation completes (about 2.8s)
+  setTimeout(() => {
+    const splash = document.getElementById('splash-screen');
+    if (splash) {
+      splash.classList.add('fade-out');
+      setTimeout(() => splash.remove(), 900); // 0.9s is the transform duration
+    }
+  }, 2800);
+  
+  // Show welcome screen by default, but render history in sidebar
+  renderRecentSearches();
 });
 
 function onInputChange() {
@@ -46,14 +59,8 @@ function toggleTheme() {
 }
 
 // ─── Sidebar ────────────────────────────────────────────
-function openSidebar() {
-  document.getElementById('sidebar').classList.add('open');
-  document.getElementById('backdrop').classList.add('show');
-}
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('backdrop').classList.remove('show');
-}
+// Sidebar is now permanently visible. Toggle functions removed.
+
 
 // ─── Send ────────────────────────────────────────────
 function onKey(e) {
@@ -116,6 +123,8 @@ async function send() {
       await delay(200);
       appendScholarships(data.scholarships);
     }
+    
+    saveToThread(msg, data.reply, data.scholarships);
 
   } catch (err) {
     typing.remove();
@@ -139,6 +148,8 @@ function injectMessage(text) {
 
 async function startNewChat() {
   await fetch('/api/reset', { method: 'POST' });
+  currentThreadId = Date.now().toString();
+  renderRecentSearches();
   collectedFields = [];
   updateProgressUI(0);
   document.getElementById('profile-pill').style.display = 'none';
@@ -150,7 +161,7 @@ async function startNewChat() {
   msgs.innerHTML = `
     <div class="welcome" id="welcome">
       <div class="welcome-icon">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div>
       <h1>How can I help you?</h1>
       <p>I'm ScholarBot — your AI guide to Indian scholarships. Chat naturally, I understand everything.</p>
@@ -334,3 +345,129 @@ function renderMd(text) {
     .replace(/\n/g, '<br>');
   return t;
 }
+
+// ─── Chat History ──────────────────────────────────────────
+function saveToThread(userMsg, botReply, scholarships) {
+  let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
+  if (!threads[currentThreadId]) {
+    threads[currentThreadId] = { 
+      id: currentThreadId, 
+      title: userMsg.substring(0, 25) + (userMsg.length > 25 ? '...' : ''), 
+      msgs: [], 
+      time: Date.now() 
+    };
+  }
+  threads[currentThreadId].msgs.push({ userMsg, botReply, scholarships });
+  threads[currentThreadId].time = Date.now();
+  
+  // Keep 5 latest
+  let all = Object.values(threads).sort((a,b) => b.time - a.time);
+  if (all.length > 5) {
+    all = all.slice(0, 5);
+    let newThreads = {};
+    all.forEach(t => newThreads[t.id] = t);
+    localStorage.setItem('chatThreads', JSON.stringify(newThreads));
+  } else {
+    localStorage.setItem('chatThreads', JSON.stringify(threads));
+  }
+  renderRecentSearches();
+}
+
+function renderRecentSearches() {
+  let container = document.getElementById('recent-searches-list');
+  if (!container) return;
+  let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
+  let all = Object.values(threads).sort((a,b) => b.time - a.time);
+
+  // Preserve collapse state across re-renders
+  const wasCollapsed = container.classList.contains('history-collapsed');
+
+  let html = '<div class="nav-label history-header" style="margin-top:20px; display:flex; align-items:center; justify-content:space-between; padding-right:4px;">'
+    + '<span>Previous Chats</span>'
+    + '<div style="display:flex; align-items:center; gap:4px;">'
+    + (all.length > 0
+      ? '<button class="clear-all-btn" onclick="clearAllHistory()" title="Clear all history">'
+        + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+        + 'Clear all</button>'
+      : '')
+    + '<button class="history-toggle-btn" onclick="toggleHistorySection()" title="Toggle history">'
+    + '<svg class="history-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>'
+    + '</button>'
+    + '</div>'
+    + '</div>';
+
+  html += '<div class="history-list-body">';
+  if (all.length === 0) {
+    html += '<div class="history-empty">No chats yet. Start a conversation!</div>';
+  } else {
+    all.forEach(t => {
+      let activeCls = (t.id === currentThreadId) ? 'nav-item history-item active' : 'nav-item history-item';
+      html += '<div class="history-item-wrap">'
+        + '<button class="' + activeCls + '" onclick="loadThread(\'' + t.id + '\')">'
+        + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
+        + '<span class="history-title">' + escHtml(t.title) + '</span>'
+        + '</button>'
+        + '<button class="delete-chat-btn" onclick="deleteThread(\'' + t.id + '\')" title="Delete this chat">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+        + '</button>'
+        + '</div>';
+    });
+  }
+  html += '</div>';
+
+  container.style.display = 'block';
+  container.innerHTML = html;
+
+  // Restore collapse state
+  if (wasCollapsed) container.classList.add('history-collapsed');
+}
+
+function toggleHistorySection() {
+  const container = document.getElementById('recent-searches-list');
+  container.classList.toggle('history-collapsed');
+}
+
+function deleteThread(id) {
+  let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
+  delete threads[id];
+  localStorage.setItem('chatThreads', JSON.stringify(threads));
+
+  // If the deleted thread was active, start a fresh chat
+  if (id === currentThreadId) {
+    startNewChat();
+  } else {
+    renderRecentSearches();
+  }
+}
+
+function clearAllHistory() {
+  if (!confirm('Clear all chat history? This cannot be undone.')) return;
+  localStorage.removeItem('chatThreads');
+  startNewChat();
+}
+
+window.loadThread = async function(id) {
+  let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
+  let t = threads[id];
+  if (!t) return;
+  
+  currentThreadId = id;
+  // Reset backend session
+  await fetch('/api/reset', { method: 'POST' });
+  collectedFields = [];
+  updateProgressUI(0);
+  document.getElementById('profile-pill').style.display = 'none';
+  
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '';
+  
+  t.msgs.forEach(m => {
+    appendUserMsg(m.userMsg);
+    appendBotMsg(m.botReply);
+    if (m.scholarships && m.scholarships.length > 0) {
+      appendScholarships(m.scholarships);
+    }
+  });
+  renderRecentSearches();
+  closeSidebar();
+};

@@ -111,6 +111,22 @@ def chat():
             'collected_fields': []
         })
 
+    # ── LIST SCHOLARSHIPS ────────────────────────────
+    if intent == 'list_scholarships':
+        from database import get_all_scholarships_summary
+        all_scholars = get_all_scholarships_summary()
+        reply = f"🎓 **Here are all {len(all_scholars)} scholarships in my database:**\n\n"
+        for s in all_scholars:
+            reply += f"• **{s['name']}**\n"
+        reply += "\n💡 *Tell me your GPA, income, and category, and I'll find which ones match YOU!*"
+        
+        step_idx, _ = next_missing(profile)
+        return jsonify({
+            'reply': reply,
+            'step': step_idx, 'total_steps': 7,
+            'collected_fields': list(profile.keys())
+        })
+
     # ── FAQ INTENTS ───────────────────────────────────
     if intent in FAQ:
         step_idx, _ = next_missing(profile)
@@ -282,14 +298,7 @@ def get_profile_route():
 # ══════════════════════════════════════════════════════
 
 def find_free_port(start=5001, end=5020):
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(('0.0.0.0', port))
-                return port
-            except OSError:
-                continue
-    raise RuntimeError("No free port found 5001–5020")
+    return 5005
 
 
 if __name__ == '__main__':

@@ -10,14 +10,7 @@ from database import init_db
 from app import app
 
 def find_free_port(start=5001, end=5020):
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(('0.0.0.0', port))
-                return port
-            except OSError:
-                continue
-    raise RuntimeError("No free port found between 5001–5020")
+    return 5005
 
 if __name__ == '__main__':
     print("🎓 AI Scholarship Assistant starting...")
