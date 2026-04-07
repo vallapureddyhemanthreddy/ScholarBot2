@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import json
+from werkzeug.security import generate_password_hash, check_password_hash
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'scholarships.db')
 
@@ -11,6 +13,17 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
+    
+    # Force a clean start to resolve schema inconsistencies from previous versions
+    c.execute("DROP TABLE IF EXISTS users")
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        profile_data TEXT DEFAULT '{}'
+    )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS scholarships (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -29,6 +42,10 @@ def init_db():
         min_year INTEGER DEFAULT 1,
         max_year INTEGER DEFAULT 5
     )''')
+
+    c.execute("SELECT username FROM users")
+    users = [row['username'] for row in c.fetchall()]
+    print(f"  👤  Existing users: {users}")
 
     c.execute("SELECT COUNT(*) FROM scholarships")
     count = c.fetchone()[0]
@@ -216,6 +233,51 @@ def get_all_scholarships_summary():
     rows = c.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def create_user(username, password):
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", 
+                  (username, generate_password_hash(password)))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError as e:
+        print(f"[DB DEBUG] Signup IntegrityError: {e}")
+        return False
+    except Exception as e:
+        print(f"[DB DEBUG] Unexpected error: {e}")
+        raise e
+    finally:
+        conn.close()
+
+def get_user(username, password):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE username = ?", (username,))
+    user = c.fetchone()
+    conn.close()
+    if user and check_password_hash(user['password_hash'], password):
+        return dict(user)
+    return None
+
+def update_user_profile(username, profile_data):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("UPDATE users SET profile_data = ? WHERE username = ?", 
+              (json.dumps(profile_data), username))
+    conn.commit()
+    conn.close()
+
+def get_user_profile(username):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT profile_data FROM users WHERE username = ?", (username,))
+    row = c.fetchone()
+    conn.close()
+    if row and row['profile_data']:
+        return json.loads(row['profile_data'])
+    return {}
 
 def match_scholarships(user_profile):
     conn = get_db()

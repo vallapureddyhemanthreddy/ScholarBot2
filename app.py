@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify, render_template, session
-from database import init_db, match_scholarships
 from nlp_engine import (
     detect_intent, extract_all_fields, detect_correction,
     QUESTIONS, CONFIRMATIONS, HINTS, get_faq_response, FAQ
+)
+from database import (
+    init_db, match_scholarships, create_user, get_user, update_user_profile, get_user_profile
 )
 import os
 import socket
@@ -10,7 +12,7 @@ import socket
 app = Flask(__name__)
 app.secret_key = 'scholarbot-secret-2025-xk9'
 
-STEPS = ['gpa', 'income', 'category', 'gender', 'state', 'course', 'year']
+STEPS = ['gpa', 'income', 'category', 'gender', 'state', 'course', 'year', 'college']
 
 # ══════════════════════════════════════════════════════
 #  HELPERS
@@ -37,6 +39,7 @@ def format_profile_summary(profile):
         'state':    ('🗺️', 'State',          str),
         'course':   ('🎓', 'Course',         str),
         'year':     ('📅', 'Year',           lambda v: f"Year {int(v)}"),
+        'college':  ('🏛️', 'College',        str),
     }
     return "\n".join(
         f"{icon} **{label}:** {fmt(profile[key])}"
@@ -75,6 +78,53 @@ def build_results(profile):
 def index():
     return render_template('index.html')
 
+@app.route('/api/signup', methods=['POST'])
+def signup():
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    print(f"[SIGNUP DEBUG] Request for user: '{username}'")
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+    
+    if create_user(username, password):
+        print(f"[SIGNUP DEBUG] Success for: '{username}'")
+        session['user'] = username
+        # Merge existing session profile into the new user's DB record
+        current_profile = get_profile()
+        if current_profile:
+            update_user_profile(username, current_profile)
+        return jsonify({'status': 'ok', 'user': username, 'profile': current_profile})
+    else:
+        return jsonify({'error': 'Username already exists'}), 400
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    user = get_user(username, password)
+    if user:
+        session['user'] = username
+        # Load user's saved profile into session
+        db_profile = get_user_profile(username)
+        # We could merge with current session, but loading from DB takes precedence
+        session['profile'] = db_profile
+        return jsonify({'status': 'ok', 'user': username, 'profile': db_profile})
+    else:
+        return jsonify({'error': 'Invalid username or password'}), 401
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('user', None)
+    session.pop('profile', None)
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/user', methods=['GET'])
+def get_user_status():
+    return jsonify({'user': session.get('user')})
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -177,6 +227,9 @@ def chat():
     if correction:
         profile.update(correction)
         session['profile'] = profile
+        if 'user' in session:
+            update_user_profile(session['user'], profile)
+
         corrected = ", ".join(f"**{k}**" for k in correction.keys())
         step_idx, next_field = next_missing(profile)
         if next_field:
@@ -192,6 +245,8 @@ def chat():
     if extracted:
         profile.update(extracted)
         session['profile'] = profile
+        if 'user' in session:
+            update_user_profile(session['user'], profile)
 
         # Build confirmation for newly extracted fields
         confirms = []
@@ -225,9 +280,12 @@ def chat():
     # ── SINGLE FIELD — SKIP ───────────────────────────
     if intent == 'skip':
         step_idx, current_field = next_missing(profile)
-        if current_field in ('state', 'course'):
+        if current_field in ('state', 'course', 'college'):
             profile[current_field] = 'All'
             session['profile'] = profile
+            if 'user' in session:
+                update_user_profile(session['user'], profile)
+
             step_idx, next_field = next_missing(profile)
             if next_field:
                 return jsonify({
@@ -298,7 +356,8 @@ def get_profile_route():
 # ══════════════════════════════════════════════════════
 
 def find_free_port(start=5001, end=5020):
-    return 5005
+    # Hardcoded to 5010 to avoid conflict with Flask's auto-reloader
+    return 5010
 
 
 if __name__ == '__main__':

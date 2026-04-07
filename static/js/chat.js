@@ -2,8 +2,8 @@
 //  ScholarBot — Claude-powered Chat Engine
 // ═══════════════════════════════════════════════════
 
-const STEPS = ['gpa','income','category','gender','state','course','year'];
-const STEP_LABELS = ['GPA','Income','Category','Gender','State','Course','Year'];
+const STEPS = ['gpa', 'income', 'category', 'gender', 'state', 'course', 'year', 'college'];
+const STEP_LABELS = ['GPA', 'Income', 'Category', 'Gender', 'State', 'Course', 'Year', 'College'];
 
 let busy = false;
 let collectedFields = [];
@@ -15,7 +15,8 @@ window.addEventListener('DOMContentLoaded', () => {
   applyTheme(saved, false);
   document.getElementById('input').addEventListener('input', onInputChange);
   document.getElementById('input').focus();
-  
+  checkUserStatus();
+
   // Hide splash screen after premium animation completes (about 2.8s)
   setTimeout(() => {
     const splash = document.getElementById('splash-screen');
@@ -24,11 +25,11 @@ window.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => splash.remove(), 900); // 0.9s is the transform duration
     }
   }, 2800);
-  
-  // Show welcome screen by default, but render history in sidebar
+
   // Init Hyper-Space Idle Animation
   initWarpDrive();
   resetIdleTimer();
+  renderRecentSearches();
 });
 
 function onInputChange() {
@@ -40,15 +41,15 @@ function onInputChange() {
 // ─── Theme ────────────────────────────────────────────
 function applyTheme(t, save = true) {
   document.documentElement.setAttribute('data-theme', t);
-  const sun  = document.querySelector('.icon-sun');
+  const sun = document.querySelector('.icon-sun');
   const moon = document.querySelector('.icon-moon');
-  const lbl  = document.getElementById('theme-label');
+  const lbl = document.getElementById('theme-label');
   if (t === 'dark') {
-    sun.style.display  = 'block';
+    sun.style.display = 'block';
     moon.style.display = 'none';
     lbl.textContent = 'Light mode';
   } else {
-    sun.style.display  = 'none';
+    sun.style.display = 'none';
     moon.style.display = 'block';
     lbl.textContent = 'Dark mode';
   }
@@ -59,10 +60,6 @@ function toggleTheme() {
   const cur = document.documentElement.getAttribute('data-theme');
   applyTheme(cur === 'dark' ? 'light' : 'dark');
 }
-
-// ─── Sidebar ────────────────────────────────────────────
-// Sidebar is now permanently visible. Toggle functions removed.
-
 
 // ─── Send ────────────────────────────────────────────
 function onKey(e) {
@@ -80,7 +77,7 @@ function grow(el) {
 async function send() {
   if (busy) return;
   const input = document.getElementById('input');
-  const msg   = input.value.trim();
+  const msg = input.value.trim();
   if (!msg) return;
 
   hideWelcome();
@@ -93,7 +90,7 @@ async function send() {
   const typing = appendTyping();
 
   try {
-    const res  = await fetch('/api/chat', {
+    const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg })
@@ -110,13 +107,7 @@ async function send() {
 
     if (data.collected_fields) {
       collectedFields = data.collected_fields;
-      const count = collectedFields.length;
-      updateProgressUI(count);
-      const pill = document.getElementById('profile-pill');
-      if (count > 0) {
-        pill.style.display = 'flex';
-        document.getElementById('profile-pill-text').textContent = `${count}/7 collected`;
-      }
+      renderProfileUI();
     }
 
     appendBotMsg(data.reply);
@@ -125,7 +116,7 @@ async function send() {
       await delay(200);
       appendScholarships(data.scholarships);
     }
-    
+
     saveToThread(msg, data.reply, data.scholarships);
 
   } catch (err) {
@@ -145,7 +136,6 @@ function injectMessage(text) {
   grow(input);
   document.getElementById('send-btn').disabled = false;
   send();
-  closeSidebar();
 }
 
 async function startNewChat() {
@@ -188,8 +178,6 @@ async function startNewChat() {
         </button>
       </div>
     </div>`;
-
-  closeSidebar();
 }
 
 // ─── DOM helpers ────────────────────────────────────────────
@@ -208,7 +196,7 @@ function appendUserMsg(text) {
   wrap.innerHTML = `
     <div class="msg-row user">
       <div class="avatar">You</div>
-      <div class="bubble">${escHtml(text).replace(/\n/g,'<br>')}</div>
+      <div class="bubble">${escHtml(text).replace(/\n/g, '<br>')}</div>
     </div>`;
   document.getElementById('messages').appendChild(wrap);
   scrollBottom();
@@ -286,11 +274,29 @@ function appendScholarships(list) {
   scrollBottom();
 }
 
-// ─── Progress UI ────────────────────────────────────────────
+// ─── Progress & Profile UI ──────────────────────────────────────────
+function renderProfileUI() {
+  const count = collectedFields.length;
+  updateProgressUI(count);
+  renderProfilePill();
+}
+
+function renderProfilePill() {
+  const count = collectedFields.length;
+  const pill = document.getElementById('profile-pill');
+  if (!pill) return;
+  if (count > 0) {
+    pill.style.display = 'flex';
+    document.getElementById('profile-pill-text').textContent = `${count}/7 collected`;
+  } else {
+    pill.style.display = 'none';
+  }
+}
+
 function updateProgressUI(count) {
   const wrap = document.getElementById('progress-bar-wrap');
   const fill = document.getElementById('progress-fill');
-  const row  = document.getElementById('progress-steps-row');
+  const row = document.getElementById('progress-steps-row');
 
   if (count === 0) {
     wrap.style.display = 'none';
@@ -300,16 +306,11 @@ function updateProgressUI(count) {
   wrap.style.display = 'block';
   fill.style.width = `${Math.min(count / 7 * 100, 100)}%`;
 
-  // Filled steps go left, unfilled steps go right
-  const doneSteps    = STEPS.filter(s =>  collectedFields.includes(s));
-  const pendingSteps = STEPS.filter(s => !collectedFields.includes(s));
-  const orderedSteps = [...doneSteps, ...pendingSteps];
-
-  row.innerHTML = orderedSteps.map((s) => {
+  row.innerHTML = STEPS.map((s, i) => {
     const isDone = collectedFields.includes(s);
-    const cls    = isDone ? 'ps done' : 'ps';
+    const cls = isDone ? 'ps done' : 'ps';
     const dotCls = isDone ? 'ps-dot done' : 'ps-dot';
-    return `<div class="${cls}"><div class="${dotCls}"></div>${STEP_LABELS[STEPS.indexOf(s)]}</div>`;
+    return `<div class="${cls}"><div class="${dotCls}"></div>${STEP_LABELS[i]}</div>`;
   }).join('');
 }
 
@@ -324,10 +325,10 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 function escHtml(s) {
   if (!s) return '';
   return String(s)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
 function renderMd(text) {
@@ -352,18 +353,18 @@ function renderMd(text) {
 function saveToThread(userMsg, botReply, scholarships) {
   let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
   if (!threads[currentThreadId]) {
-    threads[currentThreadId] = { 
-      id: currentThreadId, 
-      title: userMsg.substring(0, 25) + (userMsg.length > 25 ? '...' : ''), 
-      msgs: [], 
-      time: Date.now() 
+    threads[currentThreadId] = {
+      id: currentThreadId,
+      title: userMsg.substring(0, 25) + (userMsg.length > 25 ? '...' : ''),
+      msgs: [],
+      time: Date.now()
     };
   }
   threads[currentThreadId].msgs.push({ userMsg, botReply, scholarships });
   threads[currentThreadId].time = Date.now();
-  
+
   // Keep 5 latest
-  let all = Object.values(threads).sort((a,b) => b.time - a.time);
+  let all = Object.values(threads).sort((a, b) => b.time - a.time);
   if (all.length > 5) {
     all = all.slice(0, 5);
     let newThreads = {};
@@ -379,7 +380,7 @@ function renderRecentSearches() {
   let container = document.getElementById('recent-searches-list');
   if (!container) return;
   let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
-  let all = Object.values(threads).sort((a,b) => b.time - a.time);
+  let all = Object.values(threads).sort((a, b) => b.time - a.time);
 
   // Preserve collapse state across re-renders
   const wasCollapsed = container.classList.contains('history-collapsed');
@@ -389,8 +390,8 @@ function renderRecentSearches() {
     + '<div style="display:flex; align-items:center; gap:4px;">'
     + (all.length > 0
       ? '<button class="clear-all-btn" onclick="clearAllHistory()" title="Clear all history">'
-        + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
-        + 'Clear all</button>'
+      + '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>'
+      + 'Clear all</button>'
       : '')
     + '<button class="history-toggle-btn" onclick="toggleHistorySection()" title="Toggle history">'
     + '<svg class="history-chevron" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>'
@@ -448,21 +449,21 @@ function clearAllHistory() {
   startNewChat();
 }
 
-window.loadThread = async function(id) {
+window.loadThread = async function (id) {
   let threads = JSON.parse(localStorage.getItem('chatThreads') || '{}');
   let t = threads[id];
   if (!t) return;
-  
+
   currentThreadId = id;
   // Reset backend session
   await fetch('/api/reset', { method: 'POST' });
   collectedFields = [];
   updateProgressUI(0);
   document.getElementById('profile-pill').style.display = 'none';
-  
+
   const msgs = document.getElementById('messages');
   msgs.innerHTML = '';
-  
+
   t.msgs.forEach(m => {
     appendUserMsg(m.userMsg);
     appendBotMsg(m.botReply);
@@ -471,7 +472,6 @@ window.loadThread = async function(id) {
     }
   });
   renderRecentSearches();
-  closeSidebar();
 };
 
 // ─── Hyper-Space Idle Animation ─────────────────────────────
@@ -499,10 +499,10 @@ class Star {
     }
   }
   draw(ctx) {
-    let sx = (this.x / this.z) * this.canvas.width + this.canvas.width/2;
-    let sy = (this.y / this.z) * this.canvas.height + this.canvas.height/2;
-    let px = (this.x / this.pz) * this.canvas.width + this.canvas.width/2;
-    let py = (this.y / this.pz) * this.canvas.height + this.canvas.height/2;
+    let sx = (this.x / this.z) * this.canvas.width + this.canvas.width / 2;
+    let sy = (this.y / this.z) * this.canvas.height + this.canvas.height / 2;
+    let px = (this.x / this.pz) * this.canvas.width + this.canvas.width / 2;
+    let py = (this.y / this.pz) * this.canvas.height + this.canvas.height / 2;
 
     ctx.strokeStyle = `rgba(16, 185, 129, ${1 - this.z / this.canvas.width})`;
     ctx.lineWidth = 1 + (1 - this.z / this.canvas.width) * 3;
@@ -518,14 +518,14 @@ function initWarpDrive() {
   const canvas = document.getElementById('warpCanvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  
+
   const resize = () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     stars = [];
-    for(let i=0; i<starCount; i++) stars.push(new Star(canvas));
+    for (let i = 0; i < starCount; i++) stars.push(new Star(canvas));
   };
-  
+
   const animate = () => {
     ctx.fillStyle = 'rgba(10, 10, 10, 0.4)'; // Match dark theme bg
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -543,11 +543,11 @@ function resetIdleTimer() {
   clearTimeout(idleTimer);
   targetWarp = 1;
   document.querySelector('.layout').classList.remove('is-idle');
-  // Trigger hyper-space after 1 minute of silence
+  // Trigger hyper-space after 1 minute of silence (shortened to 10s for demo)
   idleTimer = setTimeout(() => {
     targetWarp = 25;
     document.querySelector('.layout').classList.add('is-idle');
-  }, 60000);
+  }, 10000); // Back to 1 minute
 }
 
 // Activity listeners
@@ -555,3 +555,146 @@ window.addEventListener('mousemove', resetIdleTimer);
 window.addEventListener('keydown', resetIdleTimer);
 window.addEventListener('mousedown', resetIdleTimer);
 window.addEventListener('touchstart', resetIdleTimer);
+
+// ─── Authentication & Modal ───────────────────────────────────────
+let currentUser = null;
+let userProfile = null;
+
+function toggleAccountModal() {
+  const modal = document.getElementById('account-modal');
+  const backdrop = document.getElementById('modal-backdrop');
+  if (modal.classList.contains('active')) {
+    modal.classList.remove('active');
+    backdrop.classList.remove('active');
+  } else {
+    modal.classList.add('active');
+    backdrop.classList.add('active');
+    if (currentUser) fetchUserProfile();
+    else updateModalUI();
+  }
+}
+
+function updateModalUI() {
+  if (currentUser) {
+    document.getElementById('modal-auth-ui').style.display = 'none';
+    document.getElementById('modal-user-ui').style.display = 'block';
+    document.getElementById('modal-name').textContent = currentUser;
+    document.getElementById('modal-avatar').textContent = currentUser.charAt(0).toUpperCase();
+    
+    const summaryDiv = document.getElementById('modal-profile-summary');
+    if (!userProfile || Object.keys(userProfile).length === 0) {
+      summaryDiv.innerHTML = '<div class="empty-profile">No profile data saved yet. Chat with ScholarBot to build your profile!</div>';
+    } else {
+      summaryDiv.innerHTML = '';
+      for (const [key, val] of Object.entries(userProfile)) {
+        if (val !== null) {
+          const div = document.createElement('div');
+          div.className = 'profile-item';
+          div.innerHTML = `<span class="profile-item-label">${key.charAt(0).toUpperCase() + key.slice(1)}</span><span class="profile-item-value">${val}</span>`;
+          summaryDiv.appendChild(div);
+        }
+      }
+    }
+  } else {
+    document.getElementById('modal-auth-ui').style.display = 'block';
+    document.getElementById('modal-user-ui').style.display = 'none';
+  }
+}
+
+async function checkUserStatus() {
+  try {
+    const res = await fetch('/api/user');
+    const data = await res.json();
+    if (data.user) {
+      currentUser = data.user;
+      fetchUserProfile();
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function fetchUserProfile() {
+  try {
+    const res = await fetch('/api/profile');
+    userProfile = await res.json();
+    updateModalUI();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function handleSignup() {
+  const user = document.getElementById('modal-username').value.trim();
+  const pass = document.getElementById('modal-password').value.trim();
+  if (!user || !pass) return alert("Please enter username and password.");
+
+  try {
+    const res = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      appendBotMsg(`✨ **Welcome, ${data.user}!** You've successfully signed up. Your profile will be saved permanently.`);
+      currentUser = data.user;
+      userProfile = data.profile || {};
+      if (userProfile) collectedFields = Object.keys(userProfile).filter(k => userProfile[k] !== null);
+      
+      renderProfileUI();
+      toggleAccountModal();
+    } else {
+      alert(data.error || "Signup failed.");
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Connection error during signup.");
+  }
+}
+
+async function handleLogin() {
+  const user = document.getElementById('modal-username').value.trim();
+  const pass = document.getElementById('modal-password').value.trim();
+  if (!user || !pass) return alert("Please enter username and password.");
+
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      appendBotMsg(`👋 **Welcome back, ${data.user}!** Your saved profile has been loaded.`);
+      currentUser = data.user;
+      userProfile = data.profile || {};
+      if (userProfile) collectedFields = Object.keys(userProfile).filter(k => userProfile[k] !== null);
+      
+      renderProfileUI();
+      toggleAccountModal();
+    } else {
+      alert(data.error || "Login failed.");
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Connection error during login.");
+  }
+}
+
+async function handleLogout() {
+  try {
+    await fetch('/api/logout', { method: 'POST' });
+    appendBotMsg("Logged out. Your profile remains safe in our database.");
+    currentUser = null;
+    userProfile = null;
+    document.getElementById('modal-username').value = '';
+    document.getElementById('modal-password').value = '';
+    collectedFields = [];
+    renderProfileUI();
+    toggleAccountModal();
+  } catch (e) {
+    console.error(e);
+    alert("Error during logout.");
+  }
+}
